@@ -12,15 +12,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Build with Buildozer
-        uses: ArtemSBulgakov/buildozer-action@v1
-        id: buildozer
+      - name: Cache Buildozer and Gradle
+        uses: actions/cache@v4
         with:
-          command: buildozer android debug
-          buildozer_version: stable
+          path: |
+            .buildozer
+            ~/.gradle
+          key: buildozer-${{ hashFiles('buildozer.spec') }}
+
+      - name: Build APK with official Buildozer Docker
+        run: |
+          docker run --rm \
+            -v "$PWD":/home/user/hostcwd \
+            -v ~/.buildozer:/home/user/.buildozer \
+            -v ~/.gradle:/home/user/.gradle \
+            kivy/buildozer:latest android debug
+
+      - name: Fix file permissions
+        run: sudo chown -R $USER:$USER .
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: propass-apk-arm64
-          path: ${{ steps.buildozer.outputs.filename }}
+          name: propass-apk
+          path: bin/*.apk
