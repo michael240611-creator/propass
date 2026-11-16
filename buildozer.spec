@@ -6,6 +6,9 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 1.0.0
 
+# Автоматическое принятие лицензий Android SDK
+android.accept_sdk_license = True
+
 android.permissions = INTERNET, ACCESS_NETWORK_STATE
 android.archs = arm64-v8a
 android.api = 33
