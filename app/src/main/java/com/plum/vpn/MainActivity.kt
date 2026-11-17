@@ -29,7 +29,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.plum.vpn.ui.ClaudeIcon
+import com.plum.vpn.ui.DuckAnimation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
@@ -115,11 +115,12 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
-        ClaudeIcon(modifier = Modifier.size(72.dp), color = Accent)
+        // Утка со сливой
+        DuckAnimation(modifier = Modifier.size(160.dp))
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
             text = "PLUM VPN", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black,
@@ -132,7 +133,7 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             color = if (isVpnEnabled) Accent else TextGray, fontSize = 14.sp, fontWeight = FontWeight.Bold
         )
         
-        Spacer(modifier = Modifier.height(56.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Box(contentAlignment = Alignment.Center) {
             if (isVpnEnabled) {
@@ -155,7 +156,7 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             }
         }
 
-        Spacer(modifier = Modifier.height(48.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
         Card(
             modifier = Modifier.fillMaxWidth().clickable { showStrategyDialog = true },
