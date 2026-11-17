@@ -6,25 +6,17 @@ source.dir = .
 source.include_exts = py,png,jpg,kv,atlas,ttf
 version = 1.0.0
 
-# Автоматическое принятие лицензий (чтобы не было ошибки aidl)
 android.accept_sdk_license = True
-
-# Разрешения
 android.permissions = INTERNET, ACCESS_NETWORK_STATE
-
-# Архитектура
 android.archs = arm64-v8a
 android.api = 33
 android.minapi = 21
-android.ndk = 25b
 
-# Золотая связка версий, исключающая ошибки компиляции
-requirements = python3==3.10.12, kivy==2.3.0, pyjnius==1.6.0
+# Упрощенные требования без жестких версий (Docker сам подберет нужные)
+requirements = python3, kivy
 
-# Оформление
 orientation = portrait
 fullscreen = 0
-icon.filename = %(source.dir)s/icon.png
 
 [buildozer]
 log_level = 2
