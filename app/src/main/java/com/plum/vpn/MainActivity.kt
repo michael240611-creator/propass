@@ -39,10 +39,9 @@ private val Accent = Color(0xFF00FF88)
 private val TextGray = Color(0xFF888888)
 
 class MainActivity : ComponentActivity() {
-    private var selectedStrategyId = ""
     private val vpnPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            if (result.resultCode == RESULT_OK) startVpnService(selectedStrategyId)
+            if (result.resultCode == RESULT_OK) startVpnService()
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,21 +56,19 @@ class MainActivity : ComponentActivity() {
                 ),
                 colorScheme = darkColorScheme(background = BgBlack, surface = CardDark)
             ) {
-                AppNavigation(onToggleVpn = { enable, stratId ->
-                    selectedStrategyId = stratId
+                AppNavigation(onToggleVpn = { enable, _ ->
                     if (enable) {
                         val intent = VpnService.prepare(this)
-                        if (intent != null) vpnPermissionLauncher.launch(intent) else startVpnService(selectedStrategyId)
+                        if (intent != null) vpnPermissionLauncher.launch(intent) else startVpnService()
                     } else stopVpnService()
                 })
             }
         }
     }
 
-    private fun startVpnService(strategyId: String) {
+    private fun startVpnService() {
         val intent = Intent(this, PlumVpnService::class.java).apply {
             action = PlumVpnService.ACTION_START
-            putExtra(PlumVpnService.EXTRA_STRATEGY, strategyId)
         }
         startForegroundService(intent)
     }
@@ -141,6 +138,8 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             Button(
                 onClick = {
                     isVpnEnabled = !isVpnEnabled
+                    // Команда теперь берется из настроек в самом сервисе, 
+                    // поэтому здесь передаем просто ID
                     onToggleVpn(isVpnEnabled, selectedStrategy.id)
                 },
                 modifier = Modifier.size(180.dp),
@@ -305,7 +304,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                     value = customCmd,
                     onValueChange = { customCmd = it; Prefs.setCustomCommand(context, it) },
                     modifier = Modifier.fillMaxWidth(),
-                    placeholder = { Text("-f-200 -Qr", color = TextGray) },
+                    placeholder = { Text("-d1 -s1+s", color = TextGray) },
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = Accent, unfocusedBorderColor = TextGray,
                         focusedTextColor = Color.White, unfocusedTextColor = Color.White
