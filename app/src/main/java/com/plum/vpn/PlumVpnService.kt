@@ -8,13 +8,11 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import java.io.File
-import java.io.FileOutputStream
 
 class PlumVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var byedpiProcess: Process? = null
-    private var tunnelProcess: Process? = null
+    private var isRunning = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
@@ -25,48 +23,12 @@ class PlumVpnService : VpnService() {
     }
 
     private fun startVpn() {
+        if (isRunning) return
         createNotificationChannel()
-        startForeground(1, buildNotification("Запуск движка..."))
+        startForeground(1, buildNotification("Запуск..."))
 
-        val binDir = File(filesDir, "bin")
-        if (!binDir.exists()) binDir.mkdirs()
-
-        val byedpiFile = File(binDir, "libbyedpi.so")
-        val tunnelFile = File(binDir, "libhev-socks5-tunnel.so")
-
-        try {
-            copyAsset("jniLibs/arm64-v8a/libbyedpi.so", byedpiFile)
-            copyAsset("jniLibs/arm64-v8a/libhev-socks5-tunnel.so", tunnelFile)
-            
-            // Даем права на запуск
-            byedpiFile.setExecutable(true, false)
-            tunnelFile.setExecutable(true, false)
-        } catch (e: Exception) {
-            updateNotification("Ошибка распаковки: ${e.message}")
-            stopVpn()
-            return
-        }
-
-        // Запуск ByeDPI
-        val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toMutableList()
-        if (cmd.isEmpty()) cmd.addAll(listOf("-d1", "-s1+s"))
-        
-        val byedpiCmd = mutableListOf(byedpiFile.absolutePath, "-p", "1080")
-        byedpiCmd.addAll(cmd)
-
-        try {
-            val pbByeDpi = ProcessBuilder(byedpiCmd)
-            pbByeDpi.redirectErrorStream(true)
-            byedpiProcess = pbByeDpi.start()
-        } catch (e: Exception) {
-            updateNotification("Ошибка ByeDPI: ${e.message}")
-            stopVpn()
-            return
-        }
-
-        // Создаем VPN интерфейс
         val builder = Builder()
-            .setSession("Plum VPN")
+            .setSession("Plum Duck")
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addDnsServer(Prefs.getDns(this))
@@ -77,57 +39,23 @@ class PlumVpnService : VpnService() {
         }
 
         vpnInterface = builder.establish()
-        if (vpnInterface == null) { 
-            updateNotification("Ошибка: VPN интерфейс не создан")
-            stopVpn()
-            return 
-        }
-
-        // Запуск hev-socks5-tunnel
-        val configFile = File(filesDir, "hev-config.yaml")
-        configFile.writeText("""
-            tunnel:
-              mtu: 8500
-              ipv4: 10.0.0.2
-            socks5:
-              address: 127.0.0.1
-              port: 1080
-              udp: 'udp'
-        """.trimIndent())
-
-        // Передаем целочисленный файловый дескриптор!
-        val tunnelCmd = listOf(
-            tunnelFile.absolutePath,
-            configFile.absolutePath,
-            vpnInterface!!.fd.toString() // fd это Int, toString() превращает его в строку, это правильно для CLI
-        )
-        
-        try {
-            val pbTunnel = ProcessBuilder(tunnelCmd)
-            pbTunnel.redirectErrorStream(true)
-            tunnelProcess = pbTunnel.start()
-        } catch (e: Exception) {
-            updateNotification("Ошибка моста: ${e.message}")
+        if (vpnInterface == null) {
             stopVpn()
             return
         }
 
+        // Запускаем ByeDPI через наш новый мост
+        val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toTypedArray()
+        val finalArgs = if (cmd.isEmpty()) arrayOf("-p", "1080", "-d1", "-s1+s") else arrayOf("-p", "1080", *cmd)
+        
+        NativeBridge.startByeDpi(finalArgs)
+
+        isRunning = true
         updateNotification("Соединение защищено")
     }
 
-    private fun copyAsset(assetPath: String, dest: File) {
-        assets.open(assetPath).use { input ->
-            FileOutputStream(dest).use { output ->
-                input.copyTo(output)
-            }
-        }
-    }
-
     private fun stopVpn() {
-        byedpiProcess?.destroy()
-        tunnelProcess?.destroy()
-        byedpiProcess = null
-        tunnelProcess = null
+        isRunning = false
         try { vpnInterface?.close() } catch (e: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -148,7 +76,7 @@ class PlumVpnService : VpnService() {
 
     private fun buildNotification(text: String): Notification {
         return NotificationCompat.Builder(this, "vpn")
-            .setContentTitle("Plum VPN")
+            .setContentTitle("Plum Duck")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
