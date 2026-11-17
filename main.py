@@ -17,7 +17,7 @@ from kivy.core.window import Window
 from kivy.utils import get_color_from_hex
 from kivy.metrics import dp
 
-# Цветовая схема
+# Цветовая схема (Оранжевый фон, черный текст)
 ORANGE_BG = get_color_from_hex('#FF7A00')
 ORANGE_LIGHT = get_color_from_hex('#FFE0BF')
 ORANGE_BUTTON = get_color_from_hex('#FFB35C')
@@ -25,38 +25,37 @@ TEXT_COLOR = get_color_from_hex('#000000') # Черный текст
 
 Window.clearcolor = ORANGE_BG
 
-# Локализация
 TRANSLATIONS = {
     'ru': {
-        'title': 'ProPass', 'subtitle': 'Локальный SOCKS5 с фрагментацией TLS',
+        'title': 'Plum', 'subtitle': 'Локальный SOCKS5 с фрагментацией TLS',
         'lang': 'Язык', 'host': 'Хост', 'port': 'Порт', 'strategy': 'Стратегия', 'dns': 'DNS',
         'start': 'Старт', 'stop': 'Стоп', 'log': 'Лог:',
         'stopped': 'Остановлено', 'listening': 'Слушаю {}:{}', 'err_port': 'Ошибка: порт должен быть числом',
         'strat_none': 'Без обхода', 'strat_split': 'Фрагментация', 'strat_fake': 'Фейк-пакет'
     },
     'en': {
-        'title': 'ProPass', 'subtitle': 'Local SOCKS5 with TLS fragmentation',
+        'title': 'Plum', 'subtitle': 'Local SOCKS5 with TLS fragmentation',
         'lang': 'Language', 'host': 'Host', 'port': 'Port', 'strategy': 'Strategy', 'dns': 'DNS',
         'start': 'Start', 'stop': 'Stop', 'log': 'Log:',
         'stopped': 'Stopped', 'listening': 'Listening {}:{}', 'err_port': 'Error: port must be a number',
         'strat_none': 'None', 'strat_split': 'Split', 'strat_fake': 'Fake packet'
     },
     'de': {
-        'title': 'ProPass', 'subtitle': 'Lokaler SOCKS5 mit TLS-Fragmentierung',
+        'title': 'Plum', 'subtitle': 'Lokaler SOCKS5 mit TLS-Fragmentierung',
         'lang': 'Sprache', 'host': 'Host', 'port': 'Port', 'strategy': 'Strategie', 'dns': 'DNS',
         'start': 'Start', 'stop': 'Stopp', 'log': 'Protokoll:',
         'stopped': 'Gestoppt', 'listening': 'Höre zu {}:{}', 'err_port': 'Fehler: Port muss eine Zahl sein',
         'strat_none': 'Keine', 'strat_split': 'Split', 'strat_fake': 'Fake-Paket'
     },
     'fr': {
-        'title': 'ProPass', 'subtitle': 'SOCKS5 local avec fragmentation TLS',
+        'title': 'Plum', 'subtitle': 'SOCKS5 local avec fragmentation TLS',
         'lang': 'Langue', 'host': 'Hôte', 'port': 'Port', 'strategy': 'Stratégie', 'dns': 'DNS',
         'start': 'Démarrer', 'stop': 'Arrêter', 'log': 'Journal:',
         'stopped': 'Arrêté', 'listening': 'Écoute {}:{}', 'err_port': 'Erreur : le port doit être un nombre',
         'strat_none': 'Aucune', 'strat_split': 'Fractionnement', 'strat_fake': 'Faux paquet'
     },
     'it': {
-        'title': 'ProPass', 'subtitle': 'SOCKS5 locale con frammentazione TLS',
+        'title': 'Plum', 'subtitle': 'SOCKS5 locale con frammentazione TLS',
         'lang': 'Lingua', 'host': 'Host', 'port': 'Porta', 'strategy': 'Strategia', 'dns': 'DNS',
         'start': 'Avvia', 'stop': 'Ferma', 'log': 'Registro:',
         'stopped': 'Fermato', 'listening': 'In ascolto {}:{}', 'err_port': 'Errore: la porta deve essere un numero',
@@ -72,11 +71,10 @@ def is_ip(host):
         return False
 
 def resolve_dns(domain, dns_server):
-    """Простой UDP DNS-клиент для обхода системного DNS"""
     try:
         header = b'\x12\x34\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00'
         qname = b''.join(struct.pack('B', len(part)) + part.encode('ascii') for part in domain.split('.')) + b'\x00'
-        qtype = b'\x00\x01' # A record
+        qtype = b'\x00\x01'
         qclass = b'\x00\x01'
         packet = header + qname + qtype + qclass
         
@@ -242,7 +240,6 @@ class Socks5Server:
             upstream.sendall(header[:3] + struct.pack("!H", len(part2)) + part2)
 
     def _send_fake(self, upstream, data):
-        # Отправляем фейковый пакет, чтобы сбить с толку DPI
         fake = b'\x16\x03\x01\x00\x05\x01\x00\x00\x01\x00'
         upstream.sendall(fake)
         time.sleep(0.01)
@@ -269,7 +266,6 @@ class Socks5Server:
             if target is None: return
             host, port = target
 
-            # Кастомный DNS
             if not is_ip(host) and self.dns_server:
                 self.log(f"DNS {host} -> {self.dns_server}")
                 ip = resolve_dns(host, self.dns_server)
@@ -319,9 +315,9 @@ class Socks5Server:
                 except OSError: pass
 
 
-class ProPassApp(App):
+class PlumApp(App):
     def build(self):
-        self.title = 'ProPass'
+        self.title = 'Plum'
         self.server = None
         self.log_buffer = deque(maxlen=100)
         self.lang = 'ru'
@@ -329,13 +325,11 @@ class ProPassApp(App):
 
         root = BoxLayout(orientation='vertical', padding=dp(20), spacing=dp(12))
 
-        # Заголовки
-        self.title_label = Label(text='[b]ProPass[/b]', markup=True, font_size='32sp', color=TEXT_COLOR, size_hint_y=None, height=dp(50))
+        self.title_label = Label(text='[b]Plum[/b]', markup=True, font_size='32sp', color=TEXT_COLOR, size_hint_y=None, height=dp(50))
         self.subtitle_label = Label(text='', font_size='14sp', color=TEXT_COLOR, size_hint_y=None, height=dp(30))
         root.add_widget(self.title_label)
         root.add_widget(self.subtitle_label)
 
-        # Сетка настроек
         grid = GridLayout(cols=2, spacing=dp(10), size_hint_y=None, height=dp(220))
         
         self.lang_label = Label(text='', color=TEXT_COLOR, bold=True, halign='left')
@@ -368,7 +362,6 @@ class ProPassApp(App):
 
         root.add_widget(grid)
 
-        # Кнопки
         button_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=dp(60), spacing=dp(15))
         self.start_btn = Button(text='', background_color=ORANGE_BUTTON, color=TEXT_COLOR, font_size='18sp', bold=True)
         self.start_btn.bind(on_press=self.start_server)
@@ -378,7 +371,6 @@ class ProPassApp(App):
         button_layout.add_widget(self.stop_btn)
         root.add_widget(button_layout)
 
-        # Лог
         self.log_label_title = Label(text='', font_size='16sp', color=TEXT_COLOR, bold=True, size_hint_y=None, height=dp(30), halign='left')
         root.add_widget(self.log_label_title)
 
@@ -408,7 +400,6 @@ class ProPassApp(App):
         self.stop_btn.text = t['stop']
         self.log_label_title.text = t['log']
         
-        # Обновляем стратегии
         curr = self.current_strategy
         self.strategy_spinner.values = (t['strat_none'], t['strat_split'], t['strat_fake'])
         if curr == 'none': self.strategy_spinner.text = t['strat_none']
@@ -452,7 +443,7 @@ class ProPassApp(App):
             server.start()
         except Exception as exc:
             t = TRANSLATIONS[self.lang]
-            self.log(t['err_start'].format(exc))
+            self.log(f"Error: {exc}")
             return
             
         self.server = server
@@ -471,4 +462,4 @@ class ProPassApp(App):
         self.log(t['stopped'])
 
 if __name__ == '__main__':
-    ProPassApp().run()
+    PlumApp().run()
