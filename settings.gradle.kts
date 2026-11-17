@@ -1,3 +1,4 @@
+// file: settings.gradle.kts
 pluginManagement {
     repositories {
         google()
@@ -12,5 +13,6 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "PlumVpn"
+
+rootProject.name = "PlumVPN"
 include(":app")
