@@ -3,15 +3,14 @@ package com.plum.vpn
 
 import android.app.*
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.InetSocketAddress
 import java.nio.ByteBuffer
-import java.nio.channels.DatagramChannel
 import java.util.concurrent.atomic.AtomicBoolean
 
 class PlumVpnService : VpnService() {
@@ -23,9 +22,8 @@ class PlumVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                createNotificationChannel()
-                startForeground(1, buildNotification("VPN подключен"))
-                startVpn(intent.getStringExtra(EXTRA_STRATEGY) ?: "")
+                val strategyId = intent.getStringExtra(EXTRA_STRATEGY) ?: ""
+                startVpn(strategyId)
             }
             ACTION_STOP -> stopVpn()
         }
@@ -36,17 +34,35 @@ class PlumVpnService : VpnService() {
         if (isRunning.get()) return
         
         currentStrategy = StrategyRegistry.get(strategyId) ?: StrategyRegistry.getDefault()
+        createNotificationChannel()
+        
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            startForeground(1, buildNotification("VPN подключен"), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
+        } else {
+            startForeground(1, buildNotification("VPN подключен"))
+        }
 
         val builder = Builder()
             .setSession("Plum VPN")
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
-            // Твои DNS-серверы
-            .addDnsServer("1.1.1.1")
-            .addDnsServer("8.8.8.8")
-            .addDnsServer("77.88.8.8") // Yandex
-            .addDnsServer("9.9.9.9")   // Quad9
             .setBlocking(true)
+
+        // Установка DNS
+        val dns = Prefs.getDns(this)
+        if (dns.isNotEmpty()) {
+            builder.addDnsServer(dns)
+        }
+
+        // Белый список
+        val whitelist = Prefs.getWhitelist(this)
+        if (whitelist.isNotEmpty()) {
+            for (pkg in whitelist) {
+                try {
+                    builder.addDisallowedApplication(pkg)
+                } catch (e: PackageManager.NameNotFoundException) {}
+            }
+        }
 
         try {
             vpnInterface = builder.establish()
@@ -63,29 +79,29 @@ class PlumVpnService : VpnService() {
         isRunning.set(true)
 
         Thread {
-            val input = FileInputStream(vpnInterface!!.fileDescriptor)
-            val output = FileOutputStream(vpnInterface!!.fileDescriptor)
-            val buffer = ByteBuffer.allocate(32767)
+            try {
+                val input = FileInputStream(vpnInterface!!.fileDescriptor)
+                val output = FileOutputStream(vpnInterface!!.fileDescriptor)
+                val buffer = ByteBuffer.allocate(32767)
 
-            while (isRunning.get()) {
-                buffer.clear()
-                val length = input.channel.read(buffer)
-                if (length > 0) {
-                    val packet = buffer.array().copyOf(length)
-                    val processed = currentStrategy?.process(packet) ?: packet
-                    try {
+                while (isRunning.get()) {
+                    buffer.clear()
+                    val length = input.channel.read(buffer)
+                    if (length > 0) {
+                        val packet = buffer.array().copyOf(length)
+                        val processed = currentStrategy?.process(packet) ?: packet
                         output.write(processed)
-                    } catch (e: Exception) {
-                        break
                     }
                 }
+            } catch (e: Exception) {
+                stopVpn()
             }
         }.start()
     }
 
     private fun stopVpn() {
         isRunning.set(false)
-        vpnInterface?.close()
+        try { vpnInterface?.close() } catch (e: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -109,6 +125,7 @@ class PlumVpnService : VpnService() {
             .setContentTitle("Plum VPN")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setOngoing(true)
             .build()
     }
 
