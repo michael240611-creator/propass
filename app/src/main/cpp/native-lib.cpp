@@ -1,16 +1,16 @@
 // file: app/src/main/cpp/native-lib.cpp
 #include <jni.h>
 #include <string>
+#include <android/log.h>
+#include <unistd.h>
 
-// Объявляем функции, которые лежат внутри libbyedpi.so
-extern "C" {
-    int byedpi_main(int argc, char* argv[]);
-}
+// Пытаемся найти стандартную точку входа
+extern "C" int main(int argc, char* argv[]);
 
 extern "C" JNIEXPORT jint JNICALL
 Java_com_plum_vpn_NativeBridge_runByeDpi(JNIEnv *env, jobject thiz, jobjectArray args) {
     jsize argc = env->GetArrayLength(args);
-    char** argv = new char*[argc];
+    char** argv = new char*[argc + 1];
 
     for (int i = 0; i < argc; i++) {
         jstring string = (jstring) env->GetObjectArrayElement(args, i);
@@ -19,11 +19,13 @@ Java_com_plum_vpn_NativeBridge_runByeDpi(JNIEnv *env, jobject thiz, jobjectArray
         env->ReleaseStringUTFChars(string, rawString);
         env->DeleteLocalRef(string);
     }
+    argv[argc] = NULL;
 
-    // Вызов функции из ByeDPI
-    int result = byedpi_main(argc, argv);
+    __android_log_print(ANDROID_LOG_INFO, "PlumDuck", "Запуск нативного движка...");
 
-    // Очистка памяти
+    // Вызываем main()
+    int result = main(argc, argv);
+
     for (int i = 0; i < argc; i++) {
         free(argv[i]);
     }
