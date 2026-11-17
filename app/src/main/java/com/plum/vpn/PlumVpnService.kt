@@ -3,104 +3,112 @@ package com.plum.vpn
 
 import android.app.*
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
-import java.io.FileInputStream
+import java.io.File
 import java.io.FileOutputStream
-import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicBoolean
 
 class PlumVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
-    private val isRunning = AtomicBoolean(false)
-    private var currentStrategy: Strategy? = null
+    private var byedpiProcess: Process? = null
+    private var tunnelProcess: Process? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> {
-                val strategyId = intent.getStringExtra(EXTRA_STRATEGY) ?: ""
-                startVpn(strategyId)
-            }
+            ACTION_START -> startVpn()
             ACTION_STOP -> stopVpn()
         }
         return START_STICKY
     }
 
-    private fun startVpn(strategyId: String) {
-        if (isRunning.get()) return
-        
-        currentStrategy = StrategyRegistry.get(strategyId) ?: StrategyRegistry.getDefault()
+    private fun startVpn() {
         createNotificationChannel()
-        
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-            startForeground(1, buildNotification("VPN подключен"), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SYSTEM_EXEMPTED)
-        } else {
-            startForeground(1, buildNotification("VPN подключен"))
-        }
+        startForeground(1, buildNotification("Запуск движка..."))
 
-        val builder = Builder()
-            .setSession("Plum VPN")
-            .addAddress("10.0.0.2", 32)
-            .addRoute("0.0.0.0", 0)
-            .setBlocking(true)
+        // 1. Распаковываем .so из APK во внутреннюю папку
+        val binDir = File(filesDir, "bin")
+        if (!binDir.exists()) binDir.mkdirs()
 
-        // Установка DNS
-        val dns = Prefs.getDns(this)
-        if (dns.isNotEmpty()) {
-            builder.addDnsServer(dns)
-        }
-
-        // Белый список
-        val whitelist = Prefs.getWhitelist(this)
-        if (whitelist.isNotEmpty()) {
-            for (pkg in whitelist) {
-                try {
-                    builder.addDisallowedApplication(pkg)
-                } catch (e: PackageManager.NameNotFoundException) {}
-            }
-        }
+        val byedpiFile = File(binDir, "libbyedpi.so")
+        val tunnelFile = File(binDir, "libhev-socks5-tunnel.so")
 
         try {
-            vpnInterface = builder.establish()
+            copyAsset("jniLibs/arm64-v8a/libbyedpi.so", byedpiFile)
+            copyAsset("jniLibs/arm64-v8a/libhev-socks5-tunnel.so", tunnelFile)
+            byedpiFile.setExecutable(true)
+            tunnelFile.setExecutable(true)
         } catch (e: Exception) {
             stopVpn()
             return
         }
 
-        if (vpnInterface == null) {
-            stopVpn()
-            return
+        // 2. Запускаем ByeDPI как процесс
+        val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toMutableList()
+        if (cmd.isEmpty()) cmd.addAll(listOf("-d1", "-s1+s"))
+        
+        val byedpiCmd = mutableListOf(byedpiFile.absolutePath, "-p", "1080")
+        byedpiCmd.addAll(cmd)
+
+        val pbByeDpi = ProcessBuilder(byedpiCmd)
+        pbByeDpi.redirectErrorStream(true)
+        byedpiProcess = pbByeDpi.start()
+
+        // 3. Создаем VPN интерфейс
+        val builder = Builder()
+            .setSession("Plum VPN")
+            .addAddress("10.0.0.2", 32)
+            .addRoute("0.0.0.0", 0)
+            .addDnsServer(Prefs.getDns(this))
+            .setBlocking(true)
+
+        Prefs.getWhitelist(this).forEach { pkg ->
+            try { builder.addDisallowedApplication(pkg) } catch (_: Exception) {}
         }
 
-        isRunning.set(true)
+        vpnInterface = builder.establish()
+        if (vpnInterface == null) { stopVpn(); return }
 
-        Thread {
-            try {
-                val input = FileInputStream(vpnInterface!!.fileDescriptor)
-                val output = FileOutputStream(vpnInterface!!.fileDescriptor)
-                val buffer = ByteBuffer.allocate(32767)
+        // 4. Запускаем hev-socks5-tunnel
+        val configFile = File(filesDir, "hev-config.yaml")
+        configFile.writeText("""
+            tunnel:
+              mtu: 8500
+              ipv4: 10.0.0.2
+            socks5:
+              address: 127.0.0.1
+              port: 1080
+              udp: 'udp'
+        """.trimIndent())
 
-                while (isRunning.get()) {
-                    buffer.clear()
-                    val length = input.channel.read(buffer)
-                    if (length > 0) {
-                        val packet = buffer.array().copyOf(length)
-                        val processed = currentStrategy?.process(packet) ?: packet
-                        output.write(processed)
-                    }
-                }
-            } catch (e: Exception) {
-                stopVpn()
+        val tunnelCmd = listOf(
+            tunnelFile.absolutePath,
+            configFile.absolutePath,
+            vpnInterface!!.fd.toString()
+        )
+        
+        val pbTunnel = ProcessBuilder(tunnelCmd)
+        pbTunnel.redirectErrorStream(true)
+        tunnelProcess = pbTunnel.start()
+
+        updateNotification("Соединение защищено")
+    }
+
+    private fun copyAsset(assetPath: String, dest: File) {
+        assets.open(assetPath).use { input ->
+            FileOutputStream(dest).use { output ->
+                input.copyTo(output)
             }
-        }.start()
+        }
     }
 
     private fun stopVpn() {
-        isRunning.set(false)
+        byedpiProcess?.destroy()
+        tunnelProcess?.destroy()
+        byedpiProcess = null
+        tunnelProcess = null
         try { vpnInterface?.close() } catch (e: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -114,14 +122,13 @@ class PlumVpnService : VpnService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel("vpn_channel", "VPN Service", NotificationManager.IMPORTANCE_LOW)
-            val manager = getSystemService(NotificationManager::class.java)
-            manager.createNotificationChannel(channel)
+            val channel = NotificationChannel("vpn", "VPN", NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
         }
     }
 
     private fun buildNotification(text: String): Notification {
-        return NotificationCompat.Builder(this, "vpn_channel")
+        return NotificationCompat.Builder(this, "vpn")
             .setContentTitle("Plum VPN")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
@@ -129,9 +136,13 @@ class PlumVpnService : VpnService() {
             .build()
     }
 
+    private fun updateNotification(text: String) {
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.notify(1, buildNotification(text))
+    }
+
     companion object {
         const val ACTION_START = "com.plum.vpn.START"
         const val ACTION_STOP = "com.plum.vpn.STOP"
-        const val EXTRA_STRATEGY = "strategy_id"
     }
 }
