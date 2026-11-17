@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -234,7 +234,7 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
                             Text("Проверка ${testProgress}/${StrategyRegistry.all().size}...", color = Accent, fontWeight = FontWeight.Bold)
                             Spacer(modifier = Modifier.height(16.dp))
                             LinearProgressIndicator(
-                                progress = { testProgress.toFloat() / StrategyRegistry.all().size },
+                                progress = testProgress.toFloat() / StrategyRegistry.all().size,
                                 modifier = Modifier.fillMaxWidth(),
                                 color = Accent, trackColor = CardDark
                             )
@@ -277,7 +277,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().background(BgBlack).padding(16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад", tint = Accent)
+                Icon(Icons.Default.ArrowBack, contentDescription = "Назад", tint = Accent)
             }
             Text("Настройки", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
         }
