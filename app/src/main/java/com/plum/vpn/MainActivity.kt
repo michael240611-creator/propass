@@ -98,8 +98,11 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
     var selectedStrategy by remember { mutableStateOf(StrategyRegistry.getDefault()) }
     
     var isTesting by remember { mutableStateOf(false) }
-    var testProgress by remember { mutableStateOf(0) }
-    var bestStrategy by remember { mutableStateOf<Strategy?>(null) }
+    var currentDomainProgress by remember { mutableStateOf(0) }
+    var totalDomains by remember { mutableStateOf(DomainRegistry.domains.size) }
+    var bestStrategyName by remember { mutableStateOf("") }
+    var bestStrategyCount by remember { mutableStateOf(0) }
+    
     val scope = rememberCoroutineScope()
 
     Column(
@@ -138,8 +141,6 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             Button(
                 onClick = {
                     isVpnEnabled = !isVpnEnabled
-                    // Команда теперь берется из настроек в самом сервисе, 
-                    // поэтому здесь передаем просто ID
                     onToggleVpn(isVpnEnabled, selectedStrategy.id)
                 },
                 modifier = Modifier.size(180.dp),
@@ -174,19 +175,39 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             onClick = {
                 showAutoDialog = true
                 isTesting = true
-                testProgress = 0
-                bestStrategy = null
+                currentDomainProgress = 0
+                bestStrategyName = ""
+                bestStrategyCount = 0
+                
                 scope.launch(Dispatchers.IO) {
                     val list = StrategyRegistry.all()
-                    for (i in list.indices) {
-                        if (StrategyRegistry.testStrategy(list[i])) {
-                            bestStrategy = list[i]
-                            isTesting = false
-                            return@launch
+                    var bestCount = -1
+                    var bestStrat: Strategy? = null
+
+                    for (strat in list) {
+                        val passed = StrategyRegistry.testStrategy(strat) { current, total ->
+                            scope.launch(Dispatchers.Main) {
+                                currentDomainProgress = current
+                                totalDomains = total
+                            }
                         }
-                        testProgress = i + 1
+                        if (passed > bestCount) {
+                            bestCount = passed
+                            bestStrat = strat
+                            scope.launch(Dispatchers.Main) {
+                                bestStrategyName = strat.name
+                                bestStrategyCount = passed
+                            }
+                        }
                     }
-                    isTesting = false
+                    
+                    if (bestStrat != null) {
+                        selectedStrategy = bestStrat
+                    }
+                    
+                    scope.launch(Dispatchers.Main) {
+                        isTesting = false
+                    }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -226,29 +247,31 @@ fun MainScreen(onToggleVpn: (Boolean, String) -> Unit, onOpenSettings: () -> Uni
             AlertDialog(
                 onDismissRequest = { if (!isTesting) showAutoDialog = false },
                 containerColor = CardDark,
-                title = { Text("Автоподбор", color = Color.White) },
+                title = { Text("Автоподбор", color = Color.White, fontWeight = FontWeight.Bold) },
                 text = {
                     Column {
                         if (isTesting) {
-                            Text("Проверка ${testProgress}/${StrategyRegistry.all().size}...", color = Accent, fontWeight = FontWeight.Bold)
+                            Text("Проверка домена $currentDomainProgress / $totalDomains...", color = Accent, fontWeight = FontWeight.Bold)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("Текущий лидер: $bestStrategyName (обошёл $bestStrategyCount)", color = TextGray, fontSize = 12.sp)
                             Spacer(modifier = Modifier.height(16.dp))
                             LinearProgressIndicator(
-                                progress = testProgress.toFloat() / StrategyRegistry.all().size,
+                                progress = currentDomainProgress.toFloat() / totalDomains.toFloat(),
                                 modifier = Modifier.fillMaxWidth(),
                                 color = Accent, trackColor = CardDark
                             )
                         } else {
-                            if (bestStrategy != null) {
-                                Text("Рабочая: ${bestStrategy?.name}", color = Color.White)
+                            if (bestStrategyCount > 0) {
+                                Text("Лучшая: $bestStrategyName", color = Color.White)
+                                Text("Обошла $bestStrategyCount из $totalDomains доменов", color = Accent, fontSize = 12.sp)
                                 Spacer(modifier = Modifier.height(16.dp))
                                 Button(onClick = {
-                                    selectedStrategy = bestStrategy!!
                                     showAutoDialog = false
                                 }, colors = ButtonDefaults.buttonColors(containerColor = Accent)) {
                                     Text("Применить", color = BgBlack)
                                 }
                             } else {
-                                Text("Ничего не найдено.", color = Color.Red)
+                                Text("Ни одна стратегия не обошла блокировки.", color = Color.Red)
                             }
                         }
                     }
