@@ -32,7 +32,14 @@ android {
         }
     }
     
-    // Добавляем CMake
+    // ДОБАВЛЯЕМ ЭТОТ БЛОК
+    sourceSets {
+        getByName("main") {
+            jniLibs.srcDirs("src/main/jniLibs") // Оставляем на всякий случай
+            assets.srcDirs("src/main/assets")
+        }
+    }
+    
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
