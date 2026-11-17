@@ -28,7 +28,6 @@ class PlumVpnService : VpnService() {
         createNotificationChannel()
         startForeground(1, buildNotification("Запуск движка..."))
 
-        // 1. Распаковываем .so из APK во внутреннюю папку
         val binDir = File(filesDir, "bin")
         if (!binDir.exists()) binDir.mkdirs()
 
@@ -38,25 +37,34 @@ class PlumVpnService : VpnService() {
         try {
             copyAsset("jniLibs/arm64-v8a/libbyedpi.so", byedpiFile)
             copyAsset("jniLibs/arm64-v8a/libhev-socks5-tunnel.so", tunnelFile)
-            byedpiFile.setExecutable(true)
-            tunnelFile.setExecutable(true)
+            
+            // Даем права на запуск
+            byedpiFile.setExecutable(true, false)
+            tunnelFile.setExecutable(true, false)
         } catch (e: Exception) {
+            updateNotification("Ошибка распаковки: ${e.message}")
             stopVpn()
             return
         }
 
-        // 2. Запускаем ByeDPI как процесс
+        // Запуск ByeDPI
         val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toMutableList()
         if (cmd.isEmpty()) cmd.addAll(listOf("-d1", "-s1+s"))
         
         val byedpiCmd = mutableListOf(byedpiFile.absolutePath, "-p", "1080")
         byedpiCmd.addAll(cmd)
 
-        val pbByeDpi = ProcessBuilder(byedpiCmd)
-        pbByeDpi.redirectErrorStream(true)
-        byedpiProcess = pbByeDpi.start()
+        try {
+            val pbByeDpi = ProcessBuilder(byedpiCmd)
+            pbByeDpi.redirectErrorStream(true)
+            byedpiProcess = pbByeDpi.start()
+        } catch (e: Exception) {
+            updateNotification("Ошибка ByeDPI: ${e.message}")
+            stopVpn()
+            return
+        }
 
-        // 3. Создаем VPN интерфейс
+        // Создаем VPN интерфейс
         val builder = Builder()
             .setSession("Plum VPN")
             .addAddress("10.0.0.2", 32)
@@ -69,9 +77,13 @@ class PlumVpnService : VpnService() {
         }
 
         vpnInterface = builder.establish()
-        if (vpnInterface == null) { stopVpn(); return }
+        if (vpnInterface == null) { 
+            updateNotification("Ошибка: VPN интерфейс не создан")
+            stopVpn()
+            return 
+        }
 
-        // 4. Запускаем hev-socks5-tunnel
+        // Запуск hev-socks5-tunnel
         val configFile = File(filesDir, "hev-config.yaml")
         configFile.writeText("""
             tunnel:
@@ -83,15 +95,22 @@ class PlumVpnService : VpnService() {
               udp: 'udp'
         """.trimIndent())
 
+        // Передаем целочисленный файловый дескриптор!
         val tunnelCmd = listOf(
             tunnelFile.absolutePath,
             configFile.absolutePath,
-            vpnInterface!!.fd.toString()
+            vpnInterface!!.fd.toString() // fd это Int, toString() превращает его в строку, это правильно для CLI
         )
         
-        val pbTunnel = ProcessBuilder(tunnelCmd)
-        pbTunnel.redirectErrorStream(true)
-        tunnelProcess = pbTunnel.start()
+        try {
+            val pbTunnel = ProcessBuilder(tunnelCmd)
+            pbTunnel.redirectErrorStream(true)
+            tunnelProcess = pbTunnel.start()
+        } catch (e: Exception) {
+            updateNotification("Ошибка моста: ${e.message}")
+            stopVpn()
+            return
+        }
 
         updateNotification("Соединение защищено")
     }
