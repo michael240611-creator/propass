@@ -32,10 +32,10 @@ android {
         }
     }
     
-    // ДОБАВЛЯЕМ ЭТОТ БЛОК
+    // Указываем, где искать нативные библиотеки
     sourceSets {
         getByName("main") {
-            jniLibs.srcDirs("src/main/jniLibs") // Оставляем на всякий случай
+            jniLibs.srcDirs("src/main/jniLibs")
             assets.srcDirs("src/main/assets")
         }
     }
