@@ -12,6 +12,7 @@ import java.io.File
 class PlumVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var byedpiProcess: Process? = null
     private var isRunning = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -25,10 +26,11 @@ class PlumVpnService : VpnService() {
     private fun startVpn() {
         if (isRunning) return
         createNotificationChannel()
-        startForeground(1, buildNotification("Запуск..."))
+        startForeground(1, buildNotification("Запуск движка..."))
 
+        // 1. Создаем TUN интерфейс
         val builder = Builder()
-            .setSession("Plum Duck")
+            .setSession("PlumDuck")
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addDnsServer(Prefs.getDns(this))
@@ -44,18 +46,34 @@ class PlumVpnService : VpnService() {
             return
         }
 
-        // Запускаем ByeDPI через наш новый мост
-        val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toTypedArray()
-        val finalArgs = if (cmd.isEmpty()) arrayOf("-p", "1080", "-d1", "-s1+s") else arrayOf("-p", "1080", *cmd)
+        // 2. Запускаем ByeDPI
+        // Берем файл прямо из nativeLibraryDir (там ему разрешено выполняться)
+        val byedpiFile = File(applicationInfo.nativeLibraryDir, "libbyedpi.so")
         
-        NativeBridge.startByeDpi(finalArgs)
+        val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toMutableList()
+        if (cmd.isEmpty()) cmd.addAll(listOf("-d1", "-s1+s"))
+        
+        val byedpiCmd = mutableListOf(byedpiFile.absolutePath, "-p", "1080")
+        byedpiCmd.addAll(cmd)
+
+        try {
+            val pb = ProcessBuilder(byedpiCmd)
+            pb.redirectErrorStream(true)
+            byedpiProcess = pb.start()
+        } catch (e: Exception) {
+            updateNotification("Ошибка запуска ByeDPI")
+            stopVpn()
+            return
+        }
 
         isRunning = true
-        updateNotification("Соединение защищено")
+        updateNotification("Соединение защищено (ByeDPI)")
     }
 
     private fun stopVpn() {
         isRunning = false
+        byedpiProcess?.destroy()
+        byedpiProcess = null
         try { vpnInterface?.close() } catch (e: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
@@ -76,7 +94,7 @@ class PlumVpnService : VpnService() {
 
     private fun buildNotification(text: String): Notification {
         return NotificationCompat.Builder(this, "vpn")
-            .setContentTitle("Plum Duck")
+            .setContentTitle("PlumDuck")
             .setContentText(text)
             .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setOngoing(true)
