@@ -14,16 +14,6 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "1.0"
-        
-        ndk {
-            abiFilters.add("arm64-v8a")
-        }
-        
-        externalNativeBuild {
-            cmake {
-                cppFlags("-std=c++17")
-            }
-        }
     }
 
     buildTypes {
@@ -32,18 +22,10 @@ android {
         }
     }
     
-    // Указываем, где искать нативные библиотеки
+    // Указываем, где искать .so файлы
     sourceSets {
         getByName("main") {
             jniLibs.srcDirs("src/main/jniLibs")
-            assets.srcDirs("src/main/assets")
-        }
-    }
-    
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-            version = "3.22.1"
         }
     }
 
@@ -62,7 +44,7 @@ android {
     }
     packaging {
         jniLibs {
-            useLegacyPackaging = true
+            useLegacyPackaging = true // Важно, чтобы .so не сжимались
         }
     }
 }
