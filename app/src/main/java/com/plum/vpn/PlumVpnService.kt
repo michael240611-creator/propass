@@ -13,6 +13,7 @@ class PlumVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var byedpiProcess: Process? = null
+    private var tunnelProcess: Process? = null
     private var isRunning = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -30,7 +31,7 @@ class PlumVpnService : VpnService() {
 
         // 1. Создаем TUN интерфейс
         val builder = Builder()
-            .setSession("PlumDuck")
+            .setSession("Plum Duck")
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addDnsServer(Prefs.getDns(this))
@@ -47,9 +48,7 @@ class PlumVpnService : VpnService() {
         }
 
         // 2. Запускаем ByeDPI
-        // Берем файл прямо из nativeLibraryDir (там ему разрешено выполняться)
         val byedpiFile = File(applicationInfo.nativeLibraryDir, "libbyedpi.so")
-        
         val cmd = Prefs.getCustomCommand(this).split(" ").filter { it.isNotBlank() }.toMutableList()
         if (cmd.isEmpty()) cmd.addAll(listOf("-d1", "-s1+s"))
         
@@ -61,19 +60,50 @@ class PlumVpnService : VpnService() {
             pb.redirectErrorStream(true)
             byedpiProcess = pb.start()
         } catch (e: Exception) {
-            updateNotification("Ошибка запуска ByeDPI")
+            updateNotification("Ошибка ByeDPI: ${e.message}")
+            stopVpn()
+            return
+        }
+
+        // 3. Запускаем hev-socks5-tunnel
+        val tunnelFile = File(applicationInfo.nativeLibraryDir, "libhev-socks5-tunnel.so")
+        val configFile = File(filesDir, "hev-config.yaml")
+        configFile.writeText("""
+            tunnel:
+              mtu: 8500
+              ipv4: 10.0.0.2
+            socks5:
+              address: 127.0.0.1
+              port: 1080
+              udp: 'udp'
+        """.trimIndent())
+
+        val tunnelCmd = listOf(
+            tunnelFile.absolutePath,
+            configFile.absolutePath,
+            vpnInterface!!.fd.toString()
+        )
+
+        try {
+            val pbTunnel = ProcessBuilder(tunnelCmd)
+            pbTunnel.redirectErrorStream(true)
+            tunnelProcess = pbTunnel.start()
+        } catch (e: Exception) {
+            updateNotification("Ошибка моста: ${e.message}")
             stopVpn()
             return
         }
 
         isRunning = true
-        updateNotification("Соединение защищено (ByeDPI)")
+        updateNotification("Соединение защищено")
     }
 
     private fun stopVpn() {
         isRunning = false
         byedpiProcess?.destroy()
+        tunnelProcess?.destroy()
         byedpiProcess = null
+        tunnelProcess = null
         try { vpnInterface?.close() } catch (e: Exception) {}
         vpnInterface = null
         stopForeground(STOP_FOREGROUND_REMOVE)
